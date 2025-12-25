@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Art Maker - Selection Duplicate</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f0f0f0;
+            --panel-bg: white;
+            --text-color: #333;
+            --border-color: #ddd;
+            --accent-color: #007bff;
+        }
+
+        body.dark-mode {
+            --bg-color: #1a1a1a;
+            --panel-bg: #2d2d2d;
+            --text-color: #eee;
+            --border-color: #444;
+            --accent-color: #3793ff;
+        }
+
+        canvas, img { image-rendering: pixelated; }
+
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .controls {
+            background: var(--panel-bg);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .canvas-container {
+            position: relative;
+            background-color: white;
+            box-shadow: 0 0 25px rgba(0,0,0,0.3);
+            line-height: 0;
+            cursor: crosshair;
+        }
+
+        #gridOverlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            border: 1px solid #999;
+            box-sizing: border-box;
+        }
+
+        .grid-hidden #gridOverlay { display: none; }
+
+        .main-layout { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+
+        .frames-panel {
+            background: var(--panel-bg);
+            padding: 15px;
+            border-radius: 8px;
+            width: 300px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .frame-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+        }
+
+        .frame-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 380px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            padding: 5px;
+            border: 1px solid var(--border-color);
+        }
+
+        .frame-item {
+            border: 2px solid var(--border-color);
+            padding: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(128,128,128,0.05);
+            border-radius: 4px;
+        }
+
+        .frame-item.active { border-color: var(--accent-color); background: rgba(0,123,255,0.1); }
+
+        .frame-checkbox { width: 18px; height: 18px; cursor: pointer; }
+
+        .frame-preview { width: 45px; height: 45px; background: white; border: 1px solid #ccc; flex-shrink: 0; }
+
+        .frame-info { flex-grow: 1; font-size: 12px; font-weight: bold; }
+
+        .frame-actions { display: flex; flex-direction: column; gap: 2px; }
+
+        .action-btn {
+            padding: 2px 6px;
+            font-size: 10px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+
+        .action-btn:hover { background: var(--accent-color); color: white; }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--panel-bg);
+            color: var(--text-color);
+            font-weight: bold;
+        }
+
+        button.active { background: var(--accent-color); color: white; border-color: #0056b3; }
+        .btn-primary { background: #28a745; color: white; border: none; }
+        .btn-sm { padding: 4px 8px; font-size: 11px; }
+
+        #darkModeBtn { position: fixed; bottom: 20px; left: 20px; z-index: 100; border-radius: 50px; }
+        #animationPreview { width: 100px; height: 100px; border: 2px solid #333; background: white; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>Pixel Art Maker</h1>
+
+    <div class="controls">
+        <button id="penBtn" class="active">Pen</button>
+        <button id="eraserBtn">eraser</button>
+        <input type="color" id="colorPicker" value="#000000">
+        <button id="invertBtn">Color inversion</button>
+        <div style="display:flex; gap:10px; border-left:1px solid #ccc; padding-left:10px;">
+            <label style="font-size:12px">Pixel:<input type="number" id="gridSize" value="16" min="2" max="64" style="width:35px"></label>
+            <label style="font-size:12px">Spees(s):<input type="number" id="gifInterval" value="0.2" min="0.05" max="2" step="0.05" style="width:45px"></label>
+        </div>
+        <button id="toggleGrid">Grid</button>
+        <button id="savePngBtn">PNG</button>
+        <button id="saveGifBtn" class="btn-primary" disabled>GIF Loading...</button>
+    </div>
+
+    <div class="main-layout">
+        <div class="canvas-area">
+            <div class="canvas-container" id="container">
+                <canvas id="pixelCanvas"></canvas>
+                <div id="gridOverlay"></div>
+            </div>
+            <div id="status" style="margin-top:10px; font-weight:bold; opacity:0.7">Ready</div>
+        </div>
+
+        <div class="frames-panel">
+            <strong>Frame manage</strong>
+            <div class="frame-list-header">
+                <label style="cursor:pointer"><input type="checkbox" id="selectAllFrames"> Select All</label>
+                <button id="duplicateSelectedBtn" class="btn-sm btn-primary">Replication</button>
+            </div>
+            <button id="addFrameBtn" style="width: 100%; margin-bottom: 10px;">+ Add Frame</button>
+            
+            <div id="frameList" class="frame-list"></div>
+            
+            <div style="text-align: center; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                <small>Preview</small><br>
+                <img id="animationPreview">
+            </div>
+        </div>
+    </div>
+
+    <button id="darkModeBtn">🌙 Dark mode</button>
+
+    <script>
+        window.onload = () => {
+            const check = setInterval(() => {
+                if (typeof gifshot !== 'undefined') {
+                    clearInterval(check);
+                    saveGifBtn.disabled = false;
+                    saveGifBtn.innerText = "GIF Save";
+                }
+            }, 500);
+        };
+
+        const canvas = document.getElementById('pixelCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const gridSizeInput = document.getElementById('gridSize');
+        const gifIntervalInput = document.getElementById('gifInterval');
+        const colorPicker = document.getElementById('colorPicker');
+        const frameListContainer = document.getElementById('frameList');
+        const animPreview = document.getElementById('animationPreview');
+        const statusText = document.getElementById('status');
+        const saveGifBtn = document.getElementById('saveGifBtn');
+        const selectAllFrames = document.getElementById('selectAllFrames');
+
+        const DISPLAY_SIZE = 400;
+        let isDrawing = false;
+        let currentTool = 'pen';
+        let frames = [];
+        let currentFrameIndex = 0;
+        let previewTimer = null;
+        let previewFramePos = 0;
+
+        function init() {
+            const size = parseInt(gridSizeInput.value) || 16;
+            canvas.width = size;
+            canvas.height = size;
+            canvas.style.width = `${DISPLAY_SIZE}px`;
+            canvas.style.height = `${DISPLAY_SIZE}px`;
+            ctx.imageSmoothingEnabled = false;
+            updateGrid(size);
+            frames = [];
+            addFrame(true);
+            startLivePreview();
+        }
+
+        function updateGrid(size) {
+            const cellSize = DISPLAY_SIZE / size;
+            const overlay = document.getElementById('gridOverlay');
+            overlay.style.backgroundSize = `${cellSize}px ${cellSize}px`;
+            overlay.style.backgroundImage = `linear-gradient(to right,rgba(0,0,0,0.2) 1px,transparent 1px),linear-gradient(to bottom,rgba(0,0,0,0.2) 1px,transparent 1px)`;
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) / (rect.width / canvas.width));
+            const y = Math.floor((e.clientY - rect.top) / (rect.height / canvas.height));
+            if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height) {
+                if (currentTool === 'pen') {
+                    ctx.fillStyle = colorPicker.value;
+                    ctx.fillRect(x, y, 1, 1);
+                } else {
+                    ctx.clearRect(x, y, 1, 1);
+                }
+                saveCurrentFrameData();
+            }
+        }
+
+        function saveCurrentFrameData() {
+            frames[currentFrameIndex] = canvas.toDataURL();
+            const thumbs = document.querySelectorAll('.frame-preview');
+            if (thumbs[currentFrameIndex]) thumbs[currentFrameIndex].src = frames[currentFrameIndex];
+        }
+
+        function addFrame(isFirst = false) {
+            if (!isFirst) saveCurrentFrameData();
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            frames.push(tempCanvas.toDataURL());
+            currentFrameIndex = frames.length - 1;
+            if (!isFirst) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                saveCurrentFrameData();
+            }
+            renderFrameList();
+        }
+
+        function duplicateSelected() {
+            saveCurrentFrameData();
+            const checkboxes = document.querySelectorAll('.frame-checkbox');
+            const framesToDuplicate = [];
+            
+            checkboxes.forEach((cb, index) => {
+                if (cb.checked) {
+                    framesToDuplicate.push(frames[index]);
+                }
+            });
+
+            if (framesToDuplicate.length === 0) {
+                alert("Please check the frames you wish to duplicate.");
+                return;
+            }
+
+            frames.splice(currentFrameIndex + 1, 0, ...framesToDuplicate);
+            currentFrameIndex = currentFrameIndex + framesToDuplicate.length;
+            
+            switchFrame(currentFrameIndex);
+            selectAllFrames.checked = false;
+        }
+
+        function moveFrame(index, direction) {
+            saveCurrentFrameData();
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= frames.length) return;
+            const temp = frames[index];
+            frames[index] = frames[newIndex];
+            frames[newIndex] = temp;
+            currentFrameIndex = newIndex;
+            switchFrame(currentFrameIndex);
+        }
+
+        function deleteFrame(index) {
+            if (frames.length <= 1) return;
+            frames.splice(index, 1);
+            currentFrameIndex = Math.min(currentFrameIndex, frames.length - 1);
+            switchFrame(currentFrameIndex);
+        }
+
+        function switchFrame(index) {
+            currentFrameIndex = index;
+            const img = new Image();
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(img, 0, 0);
+                renderFrameList();
+            };
+            img.src = frames[index];
+        }
+
+        function renderFrameList() {
+            frameListContainer.innerHTML = '';
+            frames.forEach((data, index) => {
+                const div = document.createElement('div');
+                div.className = `frame-item ${index === currentFrameIndex ? 'active' : ''}`;
+                div.onclick = (e) => {
+                    if(e.target.type === 'checkbox') return;
+                    switchFrame(index);
+                };
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'frame-checkbox';
+                cb.onclick = (e) => e.stopPropagation();
+
+                const img = document.createElement('img');
+                img.className = 'frame-preview';
+                img.src = data;
+
+                const info = document.createElement('div');
+                info.className = 'frame-info';
+                info.innerText = `#${index + 1}`;
+
+                const actions = document.createElement('div');
+                actions.className = 'frame-actions';
+
+                const btnUp = document.createElement('button');
+                btnUp.className = 'action-btn'; btnUp.innerText = '▲';
+                btnUp.onclick = (e) => { e.stopPropagation(); moveFrame(index, -1); };
+
+                const btnDown = document.createElement('button');
+                btnDown.className = 'action-btn'; btnDown.innerText = '▼';
+                btnDown.onclick = (e) => { e.stopPropagation(); moveFrame(index, 1); };
+
+                const btnDel = document.createElement('button');
+                btnDel.className = 'action-btn'; btnDel.innerText = 'Remove';
+                btnDel.style.color = '#dc3545';
+                btnDel.onclick = (e) => { e.stopPropagation(); deleteFrame(index); };
+
+                actions.appendChild(btnUp);
+                actions.appendChild(btnDown);
+                actions.appendChild(btnDel);
+
+                div.appendChild(cb);
+                div.appendChild(img);
+                div.appendChild(info);
+                div.appendChild(actions);
+                frameListContainer.appendChild(div);
+            });
+        }
+
+        selectAllFrames.onchange = () => {
+            const checkboxes = document.querySelectorAll('.frame-checkbox');
+            checkboxes.forEach(cb => cb.checked = selectAllFrames.checked);
+        };
+
+        function startLivePreview() {
+            if (previewTimer) clearInterval(previewTimer);
+            const updateFunc = () => {
+                if (frames.length === 0) return;
+                previewFramePos = (previewFramePos + 1) % frames.length;
+                animPreview.src = frames[previewFramePos];
+            };
+            previewTimer = setInterval(updateFunc, parseFloat(gifIntervalInput.value) * 1000);
+        }
+
+        canvas.addEventListener('mousedown', (e) => { isDrawing = true; draw(e); });
+        window.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', () => { isDrawing = false; });
+        
+        document.getElementById('invertBtn').onclick = () => {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i + 3] > 0) {
+                    data[i] = 255 - data[i]; data[i + 1] = 255 - data[i + 1]; data[i + 2] = 255 - data[i + 2];
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+            saveCurrentFrameData();
+        };
+
+        document.getElementById('darkModeBtn').onclick = () => document.body.classList.toggle('dark-mode');
+        document.getElementById('penBtn').onclick = () => { currentTool = 'pen'; penBtn.classList.add('active'); eraserBtn.classList.remove('active'); };
+        document.getElementById('eraserBtn').onclick = () => { currentTool = 'eraser'; eraserBtn.classList.add('active'); penBtn.classList.remove('active'); };
+        document.getElementById('toggleGrid').onclick = () => document.getElementById('container').classList.toggle('grid-hidden');
+        document.getElementById('addFrameBtn').onclick = () => addFrame();
+        document.getElementById('duplicateSelectedBtn').onclick = duplicateSelected;
+        document.getElementById('savePngBtn').onclick = () => {
+            const link = document.createElement('a');
+            link.download = 'pixel.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        };
+
+        saveGifBtn.onclick = async () => {
+            saveCurrentFrameData();
+            saveGifBtn.disabled = true;
+            statusText.innerText = "Encoding GIF...";
+            const processedImages = await Promise.all(frames.map(dataUrl => {
+                return new Promise(resolve => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = canvas.width * 10; tempCanvas.height = canvas.height * 10;
+                        const tCtx = tempCanvas.getContext('2d');
+                        tCtx.imageSmoothingEnabled = false;
+                        tCtx.fillStyle = "#ffffff"; tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                        tCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                        resolve(tempCanvas.toDataURL('image/png'));
+                    };
+                    img.src = dataUrl;
+                });
+            }));
+            gifshot.createGIF({
+                images: processedImages,
+                gifWidth: canvas.width * 10, gifHeight: canvas.height * 10,
+                interval: parseFloat(gifIntervalInput.value), pixelated: true
+            }, function (obj) {
+                saveGifBtn.disabled = false;
+                if (!obj.error) {
+                    const link = document.createElement('a');
+                    link.download = 'pixel.gif';
+                    link.href = obj.image;
+                    link.click();
+                    statusText.innerText = "Done";
+                }
+            });
+        };
+
+        gridSizeInput.onchange = () => { if(confirm('Reset Canvas?')) init(); };
+        gifIntervalInput.onchange = () => startLivePreview();
+
+        init();
+    </script>
+</body>
+</html>
